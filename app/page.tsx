@@ -1,5 +1,5 @@
-import APAPPSDashboard from '@/components/apapps-dashboard'
+import { AuthGate } from '@/components/auth-gate'
 
 export default function Page() {
-  return <APAPPSDashboard />
+  return <AuthGate />
 }
