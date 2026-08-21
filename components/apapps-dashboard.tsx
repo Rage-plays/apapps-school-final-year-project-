@@ -121,10 +121,12 @@ export default function APAPPSDashboard({ userRole = 'admin', userId }: { userRo
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [liveCounts, setLiveCounts] = useState({ students: 0, lecturers: 0, unread: 0 })
   const [dataError, setDataError] = useState('')
+  const [profile, setProfile] = useState<{ full_name: string | null; avatar_path: string | null; department: string | null }>({ full_name: null, avatar_path: null, department: null })
   const supabase = createClient()
 
   useEffect(() => {
     if (!supabase) return
+    supabase.from('profiles').select('full_name, avatar_path, department').eq('id', userId).maybeSingle().then(({ data }) => { if (data) setProfile(data) })
     Promise.all([
       supabase.from('profiles').select('role', { count: 'exact', head: false }),
       supabase.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null),
@@ -178,8 +180,8 @@ export default function APAPPSDashboard({ userRole = 'admin', userId }: { userRo
         </aside>
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-10 flex h-20 items-center justify-between border-b border-border/70 bg-background/90 px-5 backdrop-blur-xl lg:px-10">
-            <div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu /></Button><div><p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">{studentMode ? 'Student portal' : 'Lecturer workspace'}</p><h1 className="text-xl font-semibold tracking-tight">{studentMode ? 'Welcome back, Amara' : active}</h1></div></div>
-            <div className="flex items-center gap-2"><Button variant="outline" size="sm" className="hidden gap-2 rounded-xl sm:flex" onClick={() => setStudentMode((mode) => !mode)}><UserRound />{studentMode ? 'Lecturer view' : 'Student view'}</Button><Button variant="ghost" size="icon" aria-label="Notifications"><Bell /></Button><div className="flex size-9 items-center justify-center rounded-full bg-accent text-sm font-semibold text-accent-foreground">JO</div></div>
+            <div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open menu"><Menu /></Button><div><p className="text-xs font-medium uppercase tracking-[0.16em] text-primary">{studentMode ? 'Student portal' : 'Lecturer workspace'}</p><h1 className="text-xl font-semibold tracking-tight">{studentMode ? `Welcome back, ${profile.full_name?.split(' ')[0] || 'Student'}` : active}</h1></div></div>
+            <div className="flex items-center gap-2"><Button variant="outline" size="sm" className="hidden gap-2 rounded-xl sm:flex" onClick={() => setStudentMode((mode) => !mode)}><UserRound />{studentMode ? 'Lecturer view' : 'Student view'}</Button><Button variant="ghost" size="icon" aria-label="Notifications" onClick={() => { setActive('Notifications'); setStudentMode(true) }}><Bell /></Button><button type="button" aria-label="Open profile settings" onClick={() => { setActive('Settings'); setStudentMode(true) }} className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-accent text-sm font-semibold text-accent-foreground">{profile.avatar_path ? <img src={`/api/profile-photo?pathname=${encodeURIComponent(profile.avatar_path)}`} alt="Profile" className="size-full object-cover" /> : (profile.full_name?.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'ST')}</button></div>
           </header>
 
           {studentMode ? <StudentView active={active} userId={userId} /> : userRole === 'lecturer' ? <LecturerView active={active} userId={userId} /> : active === 'Students' ? <LiveDirectory counts={liveCounts} error={dataError} /> : active !== 'Overview' ? <FunctionalWorkspacePanel active={active} userId={userId} /> : <div className="mx-auto flex max-w-[1500px] flex-col gap-8 p-5 lg:p-10">
@@ -267,11 +269,22 @@ function StudentView({ active, userId }: { active: string; userId?: string }) {
   const [loading, setLoading] = useState(true)
   const [profileName, setProfileName] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
+  const [profilePhone, setProfilePhone] = useState('')
+  const [profileAddress, setProfileAddress] = useState('')
   async function saveProfile() {
     if (!supabase || !userId || !profileName.trim()) return
-    const { error } = await supabase.from('profiles').update({ full_name: profileName.trim() }).eq('id', userId)
+    const { error } = await supabase.from('profiles').update({ full_name: profileName.trim(), phone: profilePhone.trim(), address: profileAddress.trim() }).eq('id', userId)
     setProfileMessage(error ? error.message : 'Profile updated successfully.')
   }
+  async function uploadAvatar(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file || !userId || !['image/jpeg', 'image/png'].includes(file.type) || file.size > 5 * 1024 * 1024) { setProfileMessage('Choose a JPEG or PNG image under 5 MB.'); return }
+    const form = new FormData(); form.append('file', file); form.append('userId', userId)
+    const response = await fetch('/api/profile-photo/upload', { method: 'POST', body: form }); const result = await response.json()
+    if (!response.ok) { setProfileMessage(result.error || 'Photo upload failed.'); return }
+    await supabase?.from('profiles').update({ avatar_path: result.pathname }).eq('id', userId); setProfileMessage('Profile photo updated. Refreshing…'); window.location.reload()
+  }
+  useEffect(() => { if (supabase && userId) supabase.from('profiles').select('full_name, phone, address').eq('id', userId).maybeSingle().then(({ data }) => { setProfileName(data?.full_name || ''); setProfilePhone(data?.phone || ''); setProfileAddress(data?.address || '') }) }, [supabase, userId])
   useEffect(() => {
     if (!supabase || !userId) { setLoading(false); return }
     Promise.all([
@@ -279,7 +292,7 @@ function StudentView({ active, userId }: { active: string; userId?: string }) {
       supabase.from('notifications').select('id, title, body, kind, read_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
     ]).then(([recordResult, notificationResult]) => { setRecords(recordResult.data ?? []); setNotifications(notificationResult.data ?? []); setLoading(false) })
   }, [supabase, userId])
-  if (active === 'Settings') return <LiveStudentPanel title="Profile settings" description="Update the name shown across your student workspace." loading={false}><Input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Full name" aria-label="Full name" /><Button onClick={saveProfile} className="w-fit rounded-xl">Save profile</Button>{profileMessage && <p className="text-sm text-muted-foreground">{profileMessage}</p>}</LiveStudentPanel>
+  if (active === 'Settings') return <LiveStudentPanel title="Profile settings" description="Update the name shown across your student workspace." loading={false}><Input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Full name" aria-label="Full name" /><Input value={profilePhone} onChange={(e) => setProfilePhone(e.target.value)} placeholder="Contact number" aria-label="Contact number" /><Input value={profileAddress} onChange={(e) => setProfileAddress(e.target.value)} placeholder="Home address" aria-label="Home address" /><Input type="file" accept="image/jpeg,image/png" onChange={uploadAvatar} aria-label="Profile photo" /><p className="text-xs text-muted-foreground">JPEG or PNG only, maximum 5 MB.</p><Button onClick={saveProfile} className="w-fit rounded-xl">Save profile</Button>{profileMessage && <p className="text-sm text-muted-foreground">{profileMessage}</p>}</LiveStudentPanel>
   if (active === 'Notifications') return <LiveStudentPanel title="Notification center" description="Your classes, deadlines, interventions, approvals, and announcements." loading={loading}>{notifications.length === 0 ? <p className="text-sm text-muted-foreground">No notifications yet.</p> : notifications.map((item) => <div key={item.id} className="flex gap-3 rounded-2xl border border-border/70 p-4"><Bell className="mt-1 text-primary" /><div><p className="font-medium">{item.title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{item.body}</p><Badge variant="outline" className="mt-2 capitalize">{item.kind}</Badge></div></div>)}</LiveStudentPanel>
   if (active === 'Academic records' || active === 'Analytics') return <LiveStudentPanel title={active === 'Analytics' ? 'My performance analytics' : 'Academic records'} description="These values are loaded from your confirmed Supabase profile and academic records." loading={loading}>{records.length === 0 ? <p className="text-sm text-muted-foreground">No academic records have been entered for your account yet.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><th className="pb-3">Course</th><th className="pb-3">Attendance</th><th className="pb-3">Classwork</th><th className="pb-3">Assignment</th><th className="pb-3">Exam</th></tr></thead><tbody>{records.map((record) => <tr key={record.id} className="border-b border-border/60"><td className="py-4 font-medium">{record.course_code}</td><td className="py-4">{record.attendance}%</td><td className="py-4">{record.classwork}%</td><td className="py-4">{record.assignments}%</td><td className="py-4">{record.examinations}%</td></tr>)}</tbody></table></div>}</LiveStudentPanel>
   const [whatIf, setWhatIf] = useState(false)
