@@ -10,8 +10,8 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
-    const configuredRedirect = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
-    const redirectTo = configuredRedirect || `${new URL(request.url).origin}/reset-password`
+    const requestOrigin = new URL(request.url).origin
+    const redirectTo = `${requestOrigin}/reset-password`
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
 
     if (error) {

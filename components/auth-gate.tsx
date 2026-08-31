@@ -70,7 +70,7 @@ export function AuthGate() {
     if (!supabase) { setMessage('Supabase is not configured in this preview.'); setLoading(false); return }
     if (signup) {
       const lecturerSignup = mode === 'lecturer'
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: lecturerSignup ? { full_name: name, role: 'lecturer', staff_id: staffId, title, department, faculty, office_location: officeLocation, bio, verification_status: 'pending' } : { full_name: name, matric_number: matricNumber, department, faculty, programme, level, address, phone }, emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? `${window.location.origin}/auth/callback` } })
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: lecturerSignup ? { full_name: name, role: 'lecturer', staff_id: staffId, title, department, faculty, office_location: officeLocation, bio, verification_status: 'pending' } : { full_name: name, matric_number: matricNumber, department, faculty, programme, level, address, phone }, emailRedirectTo: `${window.location.origin}/auth/callback` } })
       setMessage(error ? (error.message.toLowerCase().includes('password') ? error.message : 'Unable to create account. Check your details and try again.') : lecturerSignup ? 'Lecturer account created. An administrator must verify your staff profile before student records become available.' : data.session ? 'Account created. Welcome to APAPPS.' : 'Account created. Check your email to confirm your account.')
     } else {
       if (mode === 'admin' && email.trim().toLowerCase() !== ADMIN_EMAIL) { setMessage('Use the administrator email assigned to this workspace.'); setLoading(false); return }
