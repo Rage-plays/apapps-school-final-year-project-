@@ -56,10 +56,13 @@ export function AuthGate() {
 
   async function requestPasswordReset(event: React.FormEvent) {
     event.preventDefault(); setMessage(''); setLoading(true)
-    if (!supabase) { setMessage('Supabase is not configured in this preview.'); setLoading(false); return }
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` })
-    setMessage(error ? error.message : 'If an account exists for that email, a password reset link has been sent.')
-    setLoading(false)
+    try {
+      const response = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+      const result = await response.json().catch(() => ({}))
+      setMessage(response.ok ? result.message : result.error || 'We could not send the reset email. Please try again.')
+    } catch {
+      setMessage('Unable to reach the password reset service. Check your connection and try again.')
+    } finally { setLoading(false) }
   }
 
   async function submit(event: React.FormEvent) {
