@@ -10,14 +10,14 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
-    const origin = new URL(request.url).origin
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/reset-password`,
-    })
+    const configuredRedirect = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
+    const redirectTo = configuredRedirect || `${new URL(request.url).origin}/reset-password`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
 
     if (error) {
       console.error('[v0] Password recovery request failed:', error.message)
-      return NextResponse.json({ error: 'We could not send the reset email. Please try again.' }, { status: 502 })
+      const message = error.message.toLowerCase().includes('redirect') ? 'Password recovery is not enabled for this deployment yet. Please contact the administrator.' : error.message.toLowerCase().includes('rate') ? 'Too many reset requests. Please wait a few minutes and try again.' : 'We could not send the reset email. Please try again.'
+      return NextResponse.json({ error: message }, { status: 502 })
     }
 
     return NextResponse.json({ message: 'If an account exists for that email, a password reset link has been sent.' })
