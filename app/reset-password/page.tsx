@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function ResetPasswordPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [ready, setReady] = useState(false)
@@ -17,11 +17,25 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!supabase) { setMessage('Supabase is not configured.'); return }
+    let active = true
+    const finish = () => { if (active) { setReady(true); setMessage('Choose a new password for your account.') } }
+    const fail = () => { if (active) setMessage('This reset link is invalid or expired. Request a new password reset link.') }
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') { setReady(true); setMessage('Choose a new password for your account.') }
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') finish()
     })
-    supabase.auth.getSession().then(({ data }) => { if (data.session) { setReady(true); setMessage('Choose a new password for your account.') } })
-    return () => listener.subscription.unsubscribe()
+    const code = new URLSearchParams(window.location.search).get('code')
+    const initialise = async () => {
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) return fail()
+      }
+      const { data, error } = await supabase.auth.getSession()
+      if (error || !data.session) return fail()
+      finish()
+    }
+    initialise()
+    const timeout = window.setTimeout(() => { if (!ready) fail() }, 8000)
+    return () => { active = false; window.clearTimeout(timeout); listener.subscription.unsubscribe() }
   }, [supabase])
 
   async function save(event: React.FormEvent) {
